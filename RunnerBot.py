@@ -14,12 +14,15 @@
 import sys
 import os
 import hmac
+import json
+import shutil
+from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import discord
 from discord.ext import commands
 from aiohttp import web as _web
-from config import TOKEN, VERSION, GUILD_ID, CHANNEL_ID, DRUG_DEALER_ROLE_ID, MEMBER_ROLE_ID, TEST_IDS, COL_GOLD, DATA_DIR
+from config import TOKEN, VERSION, GUILD_ID, CHANNEL_ID, DRUG_DEALER_ROLE_ID, MEMBER_ROLE_ID, TEST_IDS, COL_GOLD, DATA_DIR, DATA_FILE
 from data import load_data, save_data, get_runner, migrate_pending_access
 from embeds import build_leader_embed_dashboard, build_xr_embed
 from views import (XRView, LeaderView, DealerLinkView, is_leader,
@@ -198,6 +201,48 @@ class StartThreadView(discord.ui.View):
         runner["thread_message_id"] = msg.id
         save_data(data)
         await interaction.followup.send(f"Your thread is ready: {thread.mention}", ephemeral=True)
+
+
+# ── DATA IMPORT (runner-lite only) ─────────────────────────────────────────
+@bot.command(name="XRImport")
+async def xr_import(ctx):
+    """Owner-only: load a copy of the live bot's runner_data.json.
+    Saved Torn API keys are removed, so this test bot can never use them."""
+    if ctx.author.id not in TEST_IDS:
+        return
+    if not ctx.message.attachments:
+        return await ctx.send("Attach runner_data.json to the `!XRImport` message.")
+    att = ctx.message.attachments[0]
+    if att.size > 20 * 1024 * 1024:
+        return await ctx.send("File is too large (over 20 MB).")
+    try:
+        incoming = json.loads((await att.read()).decode("utf-8-sig"))
+        runners = incoming["runners"]
+        assert isinstance(runners, dict) and all(isinstance(v, dict) for v in runners.values())
+    except Exception as e:
+        return await ctx.send(f"That doesn't look like runner_data.json ({type(e).__name__}). Nothing was changed.")
+    stripped = 0
+    for r in runners.values():
+        for k in [k for k in r if k.endswith("_enc")]:
+            if r[k]:
+                stripped += 1
+            r[k] = None
+        r.pop("thread_id", None)
+        r.pop("thread_message_id", None)
+    backup = None
+    if os.path.exists(DATA_FILE):
+        backup = f"{DATA_FILE}.bak-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
+        shutil.copy(DATA_FILE, backup)
+    save_data(incoming)
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    await ctx.send(
+        f"✅ Imported **{len(runners)}** runners. Removed **{stripped}** saved API keys.\n"
+        f"Re-link your own dealer key with `!XRManage` to enable Torn checks here."
+        + (f"\nPrevious data backed up to `{os.path.basename(backup)}`." if backup else "")
+    )
 
 
 # ── LEGACY ─────────────────────────────────────────────────────────────────

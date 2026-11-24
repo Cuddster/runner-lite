@@ -16,13 +16,22 @@
 #   1.0 — Initial release
 import os
 
-VERSION = "2.8"
+VERSION = "lite-0.1"
 TOKEN = os.getenv("TOKEN", "YOUR_BOT_TOKEN")
-GUILD_ID = 656208844036505600
-CHANNEL_ID = 1496828918840164383
-DRUG_DEALER_ROLE_ID = 1259164654773735496
-MEMBER_ROLE_ID = 1252064951145599038
-TEST_IDS = [346726142897815552]
+# Server, channel and role IDs come from Railway variables — no defaults, so
+# runner-lite refuses to start rather than fall back to the live RSL server.
+def _required_id(name):
+    value = os.getenv(name, "").strip()
+    if not value.isdigit():
+        raise SystemExit(f"[CONFIG] {name} must be set to a Discord ID in Railway variables")
+    return int(value)
+
+GUILD_ID = _required_id("GUILD_ID")
+CHANNEL_ID = _required_id("CHANNEL_ID")
+DRUG_DEALER_ROLE_ID = _required_id("DRUG_DEALER_ROLE_ID")
+MEMBER_ROLE_ID = _required_id("MEMBER_ROLE_ID")
+# Owner Discord IDs (comma separated): leader rights everywhere, and !XRImport
+TEST_IDS = [int(x) for x in os.getenv("OWNER_IDS", "").replace(" ", "").split(",") if x.isdigit()]
 DATA_DIR = "/data" if os.path.isdir("/data") else "."
 DATA_FILE = os.path.join(DATA_DIR, "runner_data.json")
 SETTINGS_FILE = os.path.join(DATA_DIR, "runner_settings.json")
